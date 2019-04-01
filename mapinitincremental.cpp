@@ -69,8 +69,26 @@ bool matchFeatures(	vector<KeyPoint> &_features1, cv::Mat &_desc1,
 			_jfKeypoints.push_back(j_keypoint[m]);
 		}
 	}
-
 }
+
+void displayMatches(	cv::Mat &_img1, std::vector<cv::KeyPoint> &_features1, std::vector<int> &_filtered1,
+						cv::Mat &_img2, std::vector<cv::KeyPoint> &_features2, std::vector<int> &_filtered2){
+	cv::Mat display;
+	cv::hconcat(_img1, _img2, display);
+	cv::cvtColor(display, display, CV_GRAY2BGR);
+
+	for(unsigned i = 0; i < _filtered1.size(); i++){
+		auto p1 = _features1[_filtered1[i]].pt;
+		auto p2 = _features2[_filtered2[i]].pt + cv::Point2f(_img1.cols, 0);
+		cv::circle(display, p1, 2, cv::Scalar(0,255,0),2);
+		cv::circle(display, p2, 2, cv::Scalar(0,255,0),2);
+		cv::line(display,p1, p2, cv::Scalar(0,255,0),1);
+	}
+
+	cv::imshow("display", display);
+	cv::waitKey();
+}
+
 
 int main(int argc, char **argv)
 {
@@ -133,6 +151,9 @@ int main(int argc, char **argv)
 		Mat descriptors3;
 		pt->detectAndCompute(foto3_u, cv::Mat(), features3, descriptors3);
 		matchFeatures(features2, descriptors2, features3, descriptors3, if_keypoint, jf_keypoint);
+		displayMatches(	foto2_u, features2, if_keypoint,
+						foto3_u, features3, jf_keypoint);
+		
 
 		vector<pt_2d> new_pts;
 		//recorremos los puntos ya existentes vemos si son nuevos y si no lo son los añadimos al conjunto
@@ -167,16 +188,16 @@ int main(int argc, char **argv)
 		for (int t = 0; t < new_pts.size(); t++) {
 			//struct pt_2d puntillo;
 			/*puntillo.img_idx=new_pts[t].img_idx;
-	    puntillo.match_idx=new_pts[t].match_idx;
-	    puntillo.p3d_ident=new_pts[t].p3d_ident;
-	    puntillo.pt=new_pts[t].pt;
-	    mapa.push_back(puntillo);*/
+			puntillo.match_idx=new_pts[t].match_idx;
+			puntillo.p3d_ident=new_pts[t].p3d_ident;
+			puntillo.pt=new_pts[t].pt;
+			mapa.push_back(puntillo);*/
 			mapa.push_back(new_pts[t]);
 		}
+
 		//actualizamos la imagen de referencia
-		features2.clear();
-		features2 = features3;
 		foto2_u = foto3_u;
+		features2 = features3;
 		descriptors2 = descriptors3;
 		new_pts.clear();
 		if_keypoint.clear();
