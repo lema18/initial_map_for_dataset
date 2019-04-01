@@ -18,16 +18,14 @@
 using namespace cv;
 using namespace std;
 
-struct pt_2d
-{
+struct pt_2d {
 	Point2f pt;
 	int img_idx;
 	int match_idx;
 	int p3d_ident;
 };
 
-cv::Mat loadImage(std::string _folder, int _number, cv::Mat &_intrinsics, cv::Mat &_coeffs)
-{
+cv::Mat loadImage(std::string _folder, int _number, cv::Mat &_intrinsics, cv::Mat &_coeffs) {
 	stringstream ss; /*convertimos el entero l a string para poder establecerlo como nombre de la captura*/
 	ss << _folder << "/left_" << _number << ".png";
 	std::cout << "Loading image: " << ss.str() << std::endl;
@@ -90,8 +88,7 @@ void displayMatches(	cv::Mat &_img1, std::vector<cv::KeyPoint> &_features1, std:
 }
 
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
 	// Init calibration matrices
 	Mat distcoef = (Mat_<float>(1, 5) << 0.2624, -0.9531, -0.0054, 0.0026, 1.1633);
 	Mat distor = (Mat_<float>(5, 1) << 0.2624, -0.9531, -0.0054, 0.0026, 1.1633);
@@ -110,7 +107,6 @@ int main(int argc, char **argv)
 	// Load second image
 	l++;
 	Mat foto2_u = loadImage(argv[1], l, intrinseca, distor);
-	;
 
 	// Create first pair of features
 	vector<KeyPoint> features1, features2;
@@ -124,8 +120,7 @@ int main(int argc, char **argv)
 	matchFeatures(features1, descriptors1, features2, descriptors2, if_keypoint, jf_keypoint);
 
 	//almacenamos los primeros puntos en el mapa bidimensional correspondientes a las dos primeras imágenes
-	for (int i = 0; i < if_keypoint.size(); i++)
-	{
+	for (int i = 0; i < if_keypoint.size(); i++) {
 		struct pt_2d mi_pt;
 		mi_pt.img_idx = l - 1;
 		mi_pt.match_idx = if_keypoint[i];
@@ -143,8 +138,7 @@ int main(int argc, char **argv)
 	jf_keypoint.clear();
 	l++;
 
-	while (l < 50)
-	{
+	while (l < 50) {
 		Mat foto3_u = loadImage(argv[1], l, intrinseca, distor);
 		
 		vector<KeyPoint> features3;
@@ -186,12 +180,6 @@ int main(int argc, char **argv)
 		}
 		//añadimos los nuevos puntos 2d encontrados
 		for (int t = 0; t < new_pts.size(); t++) {
-			//struct pt_2d puntillo;
-			/*puntillo.img_idx=new_pts[t].img_idx;
-			puntillo.match_idx=new_pts[t].match_idx;
-			puntillo.p3d_ident=new_pts[t].p3d_ident;
-			puntillo.pt=new_pts[t].pt;
-			mapa.push_back(puntillo);*/
 			mapa.push_back(new_pts[t]);
 		}
 
@@ -205,6 +193,7 @@ int main(int argc, char **argv)
 		
 		l++;
 	}
+
 	//aqui ya tenemos todos los puntos 2d con identificador del punto 3d al que corresponden
 	//para el total de puntos 3d calculamos en cuantas imágenes se ven si son 3 o más será un punto válido
 	int validos[ident];
@@ -224,6 +213,7 @@ int main(int argc, char **argv)
 			usados[i] = 0;
 		}
 	}
+	
 	/*llegados a este punto ya sabemos que puntos 3d son válidos para el mapa inicial, procedemos a calcular las matrices
 	para cvsba*/
 	vector<vector<Point2d>> imagePoints;
