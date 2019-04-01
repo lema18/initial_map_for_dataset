@@ -290,11 +290,23 @@ int main(int argc,char **argv)
         fila_pts.clear();
         fila_vis.clear();
     }
+    /*
     for(int views=0;views<l;views++)
     {
         cameraMatrix.push_back(intrinseca);
         distortion.push_back(distor);
         R.push_back(Mat::eye(3, 3, CV_64F));
+        T.push_back(Mat::zeros(3, 1, CV_64F));
+    }
+    */
+    for(int views=0;views<l;views++)
+    {
+        cameraMatrix.push_back(intrinseca);
+        distortion.push_back(distor);
+        Mat rotmatrix=Mat::eye(3, 3, CV_64F);
+        Mat rotvector;
+        Rodrigues(rotmatrix,rotvector);
+        R.push_back(rotvector);
         T.push_back(Mat::zeros(3, 1, CV_64F));
     }
     for(int npts=0;npts<ident;npts++)
@@ -317,7 +329,7 @@ int main(int argc,char **argv)
     pcl::visualization::PCLVisualizer viewer("Viewer");
   	viewer.setBackgroundColor (255, 255, 255);
     //pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZRGB>);
-    for(int i=0;i<l;i++)
+    /*for(int i=0;i<l;i++)
     {
         stringstream sss;
         string name;
@@ -328,6 +340,59 @@ int main(int argc,char **argv)
         eig_cam_pos(0,0) = R[i].at<double>(0,0);eig_cam_pos(0,1) = R[i].at<double>(0,1);eig_cam_pos(0,2) = R[i].at<double>(0,2);eig_cam_pos(0,3) = T[i].at<double>(0,0);
 	    eig_cam_pos(1,0) = R[i].at<double>(1,0);eig_cam_pos(1,1) = R[i].at<double>(1,1);eig_cam_pos(1,2) = R[i].at<double>(1,2);eig_cam_pos(1,3) = T[i].at<double>(1,0);
 	    eig_cam_pos(2,0) = R[i].at<double>(2,0);eig_cam_pos(2,1) = R[i].at<double>(2,1);eig_cam_pos(2,2) = R[i].at<double>(2,2);eig_cam_pos(2,3) = T[i].at<double>(2,0);
+	    eig_cam_pos(3,0) = 0 ;eig_cam_pos(3,1) = 0;eig_cam_pos(3,2) = 0;eig_cam_pos(3,3) = 1;
+        cam_pos = eig_cam_pos;
+	    viewer.addCoordinateSystem(1.0, cam_pos,name);
+        viewer.spinOnce();
+
+    }
+    */
+    /*vector<Mat> t_fin;
+    vector<Mat> r_fin;
+    for(int i=0;i<l;i++)
+    {
+        stringstream sss;
+        string name;
+        sss<<i;
+        Mat t_aux(3,1,CV_64F);
+        Mat r_aux(3,3,CV_64F);
+        t_aux=-1*(R[i].t())*T[i];
+        r_aux=R[i].t();
+        t_fin.push_back(t_aux);
+        r_fin.push_back(r_aux);
+        name=sss.str();
+        Eigen::Affine3f cam_pos;
+        Eigen::Matrix4f eig_cam_pos;
+        eig_cam_pos(0,0) = r_aux.at<double>(0,0);eig_cam_pos(0,1) = r_aux.at<double>(0,1);eig_cam_pos(0,2) = r_aux.at<double>(0,2);eig_cam_pos(0,3) = t_aux.at<double>(0,0);
+	    eig_cam_pos(1,0) = r_aux.at<double>(1,0);eig_cam_pos(1,1) = r_aux.at<double>(1,1);eig_cam_pos(1,2) = r_aux.at<double>(1,2);eig_cam_pos(1,3) = t_aux.at<double>(1,0);
+	    eig_cam_pos(2,0) = r_aux.at<double>(2,0);eig_cam_pos(2,1) = r_aux.at<double>(2,1);eig_cam_pos(2,2) = r_aux.at<double>(2,2);eig_cam_pos(2,3) = t_aux.at<double>(2,0);
+	    eig_cam_pos(3,0) = 0;eig_cam_pos(3,1) = 0;eig_cam_pos(3,2) = 0;eig_cam_pos(3,3) = 1;
+        cam_pos = eig_cam_pos;
+	    viewer.addCoordinateSystem(1.0, cam_pos,name);
+        viewer.spinOnce();
+
+    }
+    */
+    vector<Mat> r_fin;
+    vector<Mat> t_fin;
+    for(int i=0;i<l;i++)
+    {
+        stringstream sss;
+        string name;
+        sss<<i;
+        name=sss.str();
+        Mat r_aux(3,3,CV_64F);
+        Mat t_aux(3,1,CV_64F);
+        Eigen::Affine3f cam_pos;
+        Eigen::Matrix4f eig_cam_pos;
+        Rodrigues(R[i],r_aux);
+        r_aux=r_aux.t();
+        r_fin.push_back(r_aux);
+        t_aux=-r_aux*T[i];
+        t_fin.push_back(t_aux);
+        eig_cam_pos(0,0) = r_aux.at<double>(0,0);eig_cam_pos(0,1) = r_aux.at<double>(0,1);eig_cam_pos(0,2) = r_aux.at<double>(0,2);eig_cam_pos(0,3) = t_aux.at<double>(0,0);
+	    eig_cam_pos(1,0) = r_aux.at<double>(1,0);eig_cam_pos(1,1) = r_aux.at<double>(1,1);eig_cam_pos(1,2) = r_aux.at<double>(1,2);eig_cam_pos(1,3) = t_aux.at<double>(1,0);
+	    eig_cam_pos(2,0) = r_aux.at<double>(2,0);eig_cam_pos(2,1) = r_aux.at<double>(2,1);eig_cam_pos(2,2) = r_aux.at<double>(2,2);eig_cam_pos(2,3) = t_aux.at<double>(2,0);
 	    eig_cam_pos(3,0) = 0 ;eig_cam_pos(3,1) = 0;eig_cam_pos(3,2) = 0;eig_cam_pos(3,3) = 1;
         cam_pos = eig_cam_pos;
 	    viewer.addCoordinateSystem(1.0, cam_pos,name);
