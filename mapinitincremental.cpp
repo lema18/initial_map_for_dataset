@@ -14,6 +14,7 @@
 #include <Eigen/Core>
 #include <Eigen/LU>
 #include <Eigen/Geometry>
+#include <opencv2/xfeatures2d.hpp>
 
 using namespace cv;
 using namespace std;
@@ -84,7 +85,7 @@ void displayMatches(	cv::Mat &_img1, std::vector<cv::KeyPoint> &_features1, std:
 	}
 
 	cv::imshow("display", display);
-	cv::waitKey();
+	cv::waitKey(3);
 }
 
 
@@ -110,7 +111,7 @@ int main(int argc, char **argv) {
 	// Create first pair of features
 	vector<KeyPoint> features1, features2;
 	Mat descriptors1, descriptors2;
-	auto pt = cv::ORB::create();
+	auto pt = cv::xfeatures2d::SIFT::create();
 	pt->detectAndCompute(foto1_u, cv::Mat(), features1, descriptors1);
 	pt->detectAndCompute(foto2_u, cv::Mat(), features2, descriptors2);
 
@@ -138,7 +139,9 @@ int main(int argc, char **argv) {
 	jf_keypoint.clear();
 	l++;
 
-	while (l < 50) {
+	int nImages =  atoi(argv[2]);
+
+	while (l < nImages) {
 		Mat foto3_u = loadImage(argv[1], l, intrinseca, distor);
 		
 		vector<KeyPoint> features3;
@@ -206,7 +209,7 @@ int main(int argc, char **argv) {
 	}
 	int usados[ident];
 	for (int i = 0; i < ident; i++) {
-		if (validos[i] >= 3) {
+		if (validos[i] >= 4) {
 			usados[i] = 1;
 		}
 		else {
@@ -281,58 +284,16 @@ int main(int argc, char **argv) {
 	param.fixedIntrinsics = 5;
 	param.fixedDistortion = 5;
 	param.verbose = true;
+	param.iterations = 30;
 	sba.setParams(param);
 	double error = sba.run(points, imagePoints, visibility, cameraMatrix, R, T, distortion);
 	/* representación gráfica de las poses de cámara*/
 	pcl::visualization::PCLVisualizer viewer("Viewer");
-	viewer.setBackgroundColor(255, 255, 255);
-	//pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZRGB>);
-	/*for(int i=0;i<l;i++)
-	{
-	stringstream sss;
-	string name;
-	sss<<i;
-	name=sss.str();
-	Eigen::Affine3f cam_pos;
-	Eigen::Matrix4f eig_cam_pos;
-	eig_cam_pos(0,0) = R[i].at<double>(0,0);eig_cam_pos(0,1) = R[i].at<double>(0,1);eig_cam_pos(0,2) = R[i].at<double>(0,2);eig_cam_pos(0,3) = T[i].at<double>(0,0);
-	    eig_cam_pos(1,0) = R[i].at<double>(1,0);eig_cam_pos(1,1) = R[i].at<double>(1,1);eig_cam_pos(1,2) = R[i].at<double>(1,2);eig_cam_pos(1,3) = T[i].at<double>(1,0);
-	    eig_cam_pos(2,0) = R[i].at<double>(2,0);eig_cam_pos(2,1) = R[i].at<double>(2,1);eig_cam_pos(2,2) = R[i].at<double>(2,2);eig_cam_pos(2,3) = T[i].at<double>(2,0);
-	    eig_cam_pos(3,0) = 0 ;eig_cam_pos(3,1) = 0;eig_cam_pos(3,2) = 0;eig_cam_pos(3,3) = 1;
-	cam_pos = eig_cam_pos;
-	    viewer.addCoordinateSystem(1.0, cam_pos,name);
-	viewer.spinOnce();
+	viewer.setBackgroundColor(0.35, 0.35, 0.35);
 
-	}
-	*/
-	/*vector<Mat> t_fin;
-	vector<Mat> r_fin;
-	for(int i=0;i<l;i++)
-	{
-	stringstream sss;
-	string name;
-	sss<<i;
-	Mat t_aux(3,1,CV_64F);
-	Mat r_aux(3,3,CV_64F);
-	t_aux=-1*(R[i].t())*T[i];
-	r_aux=R[i].t();
-	t_fin.push_back(t_aux);
-	r_fin.push_back(r_aux);
-	name=sss.str();
-	Eigen::Affine3f cam_pos;
-	Eigen::Matrix4f eig_cam_pos;
-	eig_cam_pos(0,0) = r_aux.at<double>(0,0);eig_cam_pos(0,1) = r_aux.at<double>(0,1);eig_cam_pos(0,2) = r_aux.at<double>(0,2);eig_cam_pos(0,3) = t_aux.at<double>(0,0);
-	    eig_cam_pos(1,0) = r_aux.at<double>(1,0);eig_cam_pos(1,1) = r_aux.at<double>(1,1);eig_cam_pos(1,2) = r_aux.at<double>(1,2);eig_cam_pos(1,3) = t_aux.at<double>(1,0);
-	    eig_cam_pos(2,0) = r_aux.at<double>(2,0);eig_cam_pos(2,1) = r_aux.at<double>(2,1);eig_cam_pos(2,2) = r_aux.at<double>(2,2);eig_cam_pos(2,3) = t_aux.at<double>(2,0);
-	    eig_cam_pos(3,0) = 0;eig_cam_pos(3,1) = 0;eig_cam_pos(3,2) = 0;eig_cam_pos(3,3) = 1;
-	cam_pos = eig_cam_pos;
-	    viewer.addCoordinateSystem(1.0, cam_pos,name);
-	viewer.spinOnce();
-
-	}
-	*/
 	vector<Mat> r_fin;
 	vector<Mat> t_fin;
+	Eigen::Matrix4f initT;
 	for (int i = 0; i < l; i++) {
 		stringstream sss;
 		string name;
@@ -343,10 +304,11 @@ int main(int argc, char **argv) {
 		Eigen::Affine3f cam_pos;
 		Eigen::Matrix4f eig_cam_pos;
 		Rodrigues(R[i], r_aux);
-		r_aux = r_aux.t();
-		r_fin.push_back(r_aux);
-		t_aux = -r_aux * T[i];
-		t_fin.push_back(t_aux);
+		t_aux = T[i];
+		// r_aux = r_aux.t();
+		// r_fin.push_back(r_aux);
+		// t_aux = -r_aux * T[i];
+		// t_fin.push_back(t_aux);
 		eig_cam_pos(0, 0) = r_aux.at<double>(0, 0);
 		eig_cam_pos(0, 1) = r_aux.at<double>(0, 1);
 		eig_cam_pos(0, 2) = r_aux.at<double>(0, 2);
@@ -363,10 +325,24 @@ int main(int argc, char **argv) {
 		eig_cam_pos(3, 1) = 0;
 		eig_cam_pos(3, 2) = 0;
 		eig_cam_pos(3, 3) = 1;
-		cam_pos = eig_cam_pos;
-		viewer.addCoordinateSystem(1.0, cam_pos, name);
-		viewer.spinOnce();
+
+		if(i==0)
+			initT = eig_cam_pos;
+
+		cam_pos = initT.inverse()*eig_cam_pos;
+		viewer.addCoordinateSystem(0.2, cam_pos, name);
+		
+		pcl::PointXYZ textPoint(cam_pos(0,3), cam_pos(1,3), cam_pos(2,3));
+		viewer.addText3D(std::to_string(i), textPoint, 0.02, 1, 1, 1, "text_"+std::to_string(i));
 	}
+
+	pcl::PointCloud<pcl::PointXYZ> cloud;
+	for(auto &pt: points){
+		pcl::PointXYZ p(pt.x, pt.y, pt.z);
+		cloud.push_back(p);
+	}
+	viewer.addPointCloud<pcl::PointXYZ>(cloud.makeShared(), "mapa");
+
 	while (!viewer.wasStopped()) {
 		viewer.spin();
 	}
