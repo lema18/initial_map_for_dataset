@@ -97,7 +97,6 @@ int main(int argc, char **argv) {
 	intrinseca.convertTo(intrinseca, CV_64F);
 	distcoef.convertTo(distcoef, CV_64F);
 
-	vector<pt_2d> mapa;
 
 	// Load first image.
 	int l = 1;
@@ -120,6 +119,7 @@ int main(int argc, char **argv) {
 	matchFeatures(features1, descriptors1, features2, descriptors2, if_keypoint, jf_keypoint);
 
 	//almacenamos los primeros puntos en el mapa bidimensional correspondientes a las dos primeras imágenes
+	vector<pt_2d> mapa;
 	for (int i = 0; i < if_keypoint.size(); i++) {
 		struct pt_2d mi_pt;
 		mi_pt.img_idx = l - 1;
@@ -132,7 +132,7 @@ int main(int argc, char **argv) {
 		mi_pt.p3d_ident = ident;
 		mi_pt.pt = features2[jf_keypoint[i]].pt;
 		mapa.push_back(mi_pt);
-		ident += 1;
+		ident++;
 	}
 	if_keypoint.clear();
 	jf_keypoint.clear();
@@ -175,7 +175,7 @@ int main(int argc, char **argv) {
 				punto.match_idx = jf_keypoint[n];
 				punto.p3d_ident = ident;
 				punto.pt = features3[jf_keypoint[n]].pt;
-				ident += 1;
+				ident++;
 			}
 		}
 		//añadimos los nuevos puntos 2d encontrados
@@ -223,10 +223,11 @@ int main(int argc, char **argv) {
 	vector<Mat> R;
 	vector<Mat> T;
 	vector<Mat> distortion;
-	vector<Point2d> fila_pts;
-	vector<int> fila_vis;
+
 	int flag2;
 	for (int idf = 0; idf < l; idf++) {
+		vector<Point2d> fila_pts;
+		vector<int> fila_vis;
 		for (int k = 0; k < ident; k++) {
 			flag2 = 0;
 			for (int j = 0; j < mapa.size() && !flag2; j++) {
@@ -248,8 +249,6 @@ int main(int argc, char **argv) {
 		}
 		imagePoints.push_back(fila_pts); //*añado la fila correspondiente a la camara idf
 		visibility.push_back(fila_vis);  //añados la visibilidad correspondiente a la cámara idf
-		fila_pts.clear();
-		fila_vis.clear();
 	}
 	/*
 	for(int views=0;views<l;views++)
