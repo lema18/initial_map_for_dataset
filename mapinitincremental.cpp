@@ -18,13 +18,8 @@
 
 using namespace cv;
 using namespace std;
+using namespace cv::xfeatures2d;
 
-struct pt_2d {
-	Point2f pt;
-	int img_idx;
-	int match_idx;
-	int p3d_ident;
-};
 
 cv::Mat loadImage(std::string _folder, int _number, cv::Mat &_intrinsics, cv::Mat &_coeffs) {
 	stringstream ss; /*convertimos el entero l a string para poder establecerlo como nombre de la captura*/
@@ -87,182 +82,171 @@ void displayMatches(	cv::Mat &_img1, std::vector<cv::KeyPoint> &_features1, std:
 	cv::imshow("display", display);
 	cv::waitKey(3);
 }
-
-
-int main(int argc, char **argv) {
-	// Init calibration matrices
-	Mat distcoef = (Mat_<float>(1, 5) << 0.2624, -0.9531, -0.0054, 0.0026, 1.1633);
+int main(int argc,char ** argv)
+{
+    //init calibration matrices
+    Mat distcoef = (Mat_<float>(1, 5) << 0.2624, -0.9531, -0.0054, 0.0026, 1.1633);
 	Mat distor = (Mat_<float>(5, 1) << 0.2624, -0.9531, -0.0054, 0.0026, 1.1633);
 	distor.convertTo(distor, CV_64F);
 	Mat intrinseca = (Mat_<float>(3, 3) << 517.3, 0., 318.6, 0., 516.5, 255.3, 0., 0., 1.);
 	intrinseca.convertTo(intrinseca, CV_64F);
 	distcoef.convertTo(distcoef, CV_64F);
-
-
-	// Load first image.
-	int l = 1;
-	int ident = 0;
-	Mat foto1_u = loadImage(argv[1], l, intrinseca, distor);
-
-	// Load second image
-	l++;
-	Mat foto2_u = loadImage(argv[1], l, intrinseca, distor);
-
-	// Create first pair of features
-	vector<KeyPoint> features1, features2;
-	Mat descriptors1, descriptors2;
-	auto pt = cv::xfeatures2d::SIFT::create();
-	pt->detectAndCompute(foto1_u, cv::Mat(), features1, descriptors1);
-	pt->detectAndCompute(foto2_u, cv::Mat(), features2, descriptors2);
-
-	// Match features
-	vector<int> if_keypoint, jf_keypoint;
-	matchFeatures(features1, descriptors1, features2, descriptors2, if_keypoint, jf_keypoint);
-
-	//almacenamos los primeros puntos en el mapa bidimensional correspondientes a las dos primeras imágenes
-	vector<pt_2d> mapa;
-	for (int i = 0; i < if_keypoint.size(); i++) {
-		struct pt_2d mi_pt;
-		mi_pt.img_idx = l - 1;
-		mi_pt.match_idx = if_keypoint[i];
-		mi_pt.p3d_ident = ident;
-		mi_pt.pt = features1[if_keypoint[i]].pt;
-		mapa.push_back(mi_pt);
-		mi_pt.img_idx = l;
-		mi_pt.match_idx = jf_keypoint[i];
-		mi_pt.p3d_ident = ident;
-		mi_pt.pt = features2[jf_keypoint[i]].pt;
-		mapa.push_back(mi_pt);
-		ident++;
+    //number of images to compose the initial map
+    int nImages =  atoi(argv[2]);
+    //map for 3d points projections
+    unordered_map<int,vector<Point2f>> pt_2d;
+    //map for image index of 3d points projections;
+    unordered_map<int,vector<int>> img_index;
+    //map for match index
+    unordered_map<int,vector<int>> match_index;
+    //iterator to iterate through images
+    int l=0;
+    //identifier for 3d_point
+    int ident=0;
+    //we need variables to store the last image and the last features & descriptors
+    auto pt =SURF::create(300);
+    Mat foto1_u;
+    vector<KeyPoint> features1;
+    Mat descriptors1;
+    //load first image
+    foto1_u = loadImage(argv[1], l, intrinseca, distcoef);
+    pt->detectAndCompute(foto1_u, Mat(), features1, descriptors1);
+    l++;
+    while(l<nImages)
+    {   
+        //load new image
+        Mat foto2_u = loadImage(argv[1], l, intrinseca, distcoef);
+        //create pair of features
+        vector<KeyPoint> features2;
+	    Mat descriptors2;
+	    pt->detectAndCompute(foto2_u, Mat(), features2, descriptors2);
+        //match features
+        vector<int> if_keypoint, jf_keypoint;
+        matchFeatures(features1, descriptors1, features2, descriptors2, if_keypoint, jf_keypoint);
+        displayMatches(foto1_u, features1, if_keypoint,foto2_u, features2, jf_keypoint);
+        Mat used_features=Mat::zeros(1,int(if_keypoint.size()),CV_64F);//to differentiate the features that correspond to new points from those that do not
+        if(ident>0)
+        {
+            for(int j=0;j<ident;j++)
+            {
+                auto search_match=match_index.find(j);
+                auto search_img=img_index.find(j);
+                if(search_match!=match_index.end() && search_img!=img_index.end())
+                {
+                    auto it_match=search_match->second.end();
+                    it_match--;
+                    auto it_img=search_img->second.end();
+                    it_img--;
+                    int last_match=*it_match;
+                    int last_img=*it_img;
+                    int flag=0;
+                    for(int k=0;k<if_keypoint.size() && !flag;k++)
+                    {
+                        if(if_keypoint[k]==last_match && last_img==l-1)
+                        {
+                            //we add the new projection for the same 3d point
+                            pt_2d[j].push_back(features2[jf_keypoint[k]].pt);
+                            img_index[j].push_back(l);
+                            match_index[j].push_back(jf_keypoint[k]);
+                            used_features.at<double>(k)=1;
+                            flag=1;
+                        }
+                    }
+                }
+            }
+        }
+        //we add the projections of the new 3d points for two consecutive frames
+       
+        for (int i=0;i<if_keypoint.size();i++)
+        {
+            if(used_features.at<double>(i)==0)
+            {
+                pt_2d[ident]=vector<Point2f>();
+                pt_2d[ident].push_back(features1[if_keypoint[i]].pt);
+                img_index[ident]=vector<int>();
+                img_index[ident].push_back(l-1);
+                match_index[ident]=vector<int>();
+                match_index[ident].push_back(if_keypoint[i]);
+                pt_2d[ident].push_back(features2[jf_keypoint[i]].pt);
+                img_index[ident].push_back(l);
+                match_index[ident].push_back(jf_keypoint[i]);
+                ident++;
+            }
+        }
+        foto1_u=foto2_u;
+        features1=features2;
+        descriptors1=descriptors2;
+        used_features.release();
+        l++;
 	}
-	if_keypoint.clear();
-	jf_keypoint.clear();
-	l++;
-
-	int nImages =  atoi(argv[2]);
-
-	while (l < nImages) {
-		Mat foto3_u = loadImage(argv[1], l, intrinseca, distor);
-		
-		vector<KeyPoint> features3;
-		Mat descriptors3;
-		pt->detectAndCompute(foto3_u, cv::Mat(), features3, descriptors3);
-		matchFeatures(features2, descriptors2, features3, descriptors3, if_keypoint, jf_keypoint);
-		displayMatches(	foto2_u, features2, if_keypoint,
-						foto3_u, features3, jf_keypoint);
-		
-
-		vector<pt_2d> new_pts;
-		//recorremos los puntos ya existentes vemos si son nuevos y si no lo son los añadimos al conjunto
-		for (int n = 0; n < if_keypoint.size(); n++) {
-			struct pt_2d punto;
-			int flag = 0;
-			for (int p = 0; p < mapa.size() && !flag; p++) {
-				if (mapa[p].match_idx == if_keypoint[n] && mapa[p].img_idx == l - 1) {
-					/*el punto ya existe y además hemos encontrado una nueva imagen en la que se ve por lo que añadimos el nuevo punto 2d al conjunto*/
-					punto.img_idx = l;
-					punto.match_idx = jf_keypoint[n];
-					punto.p3d_ident = mapa[p].p3d_ident;
-					punto.pt = features3[jf_keypoint[n]].pt;
-					new_pts.push_back(punto);
-					flag = 1;
-				}
-			}
-			if (!flag) { //si no se encuentran coincidencias en el mapa el punto es nuevo por lo que se añaden sus proyecciones para dos imagenes con nuevo identificador
-				punto.img_idx = l - 1;
-				punto.match_idx = if_keypoint[n];
-				punto.p3d_ident = ident;
-				punto.pt = features2[if_keypoint[n]].pt;
-				new_pts.push_back(punto);
-				punto.img_idx = l;
-				punto.match_idx = jf_keypoint[n];
-				punto.p3d_ident = ident;
-				punto.pt = features3[jf_keypoint[n]].pt;
-				ident++;
-			}
-		}
-		//añadimos los nuevos puntos 2d encontrados
-		for (int t = 0; t < new_pts.size(); t++) {
-			mapa.push_back(new_pts[t]);
-		}
-
-		//actualizamos la imagen de referencia
-		foto2_u = foto3_u;
-		features2 = features3;
-		descriptors2 = descriptors3;
-		new_pts.clear();
-		if_keypoint.clear();
-		jf_keypoint.clear();
-		
-		l++;
-	}
-
-	//aqui ya tenemos todos los puntos 2d con identificador del punto 3d al que corresponden
-	//para el total de puntos 3d calculamos en cuantas imágenes se ven si son 3 o más será un punto válido
-	int validos[ident];
-	for (int i = 0; i < ident; i++) {
-		for (int j = 0; j < mapa.size(); j++) {
-			if (mapa[j].p3d_ident == i) {
-				validos[i] += 1;
-			}
-		}
-	}
-	int usados[ident];
-	for (int i = 0; i < ident; i++) {
-		if (validos[i] >= 4) {
-			usados[i] = 1;
-		}
-		else {
-			usados[i] = 0;
-		}
-	}
-	
-	/*llegados a este punto ya sabemos que puntos 3d son válidos para el mapa inicial, procedemos a calcular las matrices
-	para cvsba*/
-	vector<vector<Point2d>> imagePoints;
+    //prepare varibles for cvsba's run function
+    //filter to reject points that are not visible in more than 3 images
+    int valid_points[ident];
+    //debug cnt
+    int cnt=0;
+    for(int i=0;i<ident;i++)
+    {
+        auto search_point=pt_2d.find(i);
+        if(search_point!=pt_2d.end())
+        {
+            int dimension= search_point->second.size();
+            if(dimension>=3)
+            {
+                valid_points[i]=1;
+                cnt++;
+            }
+            else
+            {
+                valid_points[i]=0;
+            }
+        }
+    }
+    //matrices for cvsba's run function
+    //The method Sba::run() executes the bundle adjustment optimization for a scenerio with M cameras and N 3d points
+    vector<vector<Point2d>> imagePoints;
 	vector<Point3d> points;
 	vector<vector<int>> visibility;
 	vector<Mat> cameraMatrix;
 	vector<Mat> R;
 	vector<Mat> T;
 	vector<Mat> distortion;
-
-	int flag2;
-	for (int idf = 0; idf < l; idf++) {
-		vector<Point2d> fila_pts;
-		vector<int> fila_vis;
-		for (int k = 0; k < ident; k++) {
-			flag2 = 0;
-			for (int j = 0; j < mapa.size() && !flag2; j++) {
-				/*buscamos el punto 3d k en la imagen idf si lo encuentro 1 a visibilidad y sino 0*/
-				if (mapa[j].img_idx == idf && mapa[j].p3d_ident == k && usados[k] == 1) {
-					fila_pts.push_back(mapa[j].pt);
-					fila_vis.push_back(1);
-					flag2 = 1;
-				}
-			}
-			/*si despues de buscar en todo el mapa no encuentro el punto es que no existe en esa imagen y pongo visibilidad 0*/
-			if (!flag2 && usados[k] == 1) {
-				Point2d puntillo;
-				puntillo.x = NAN;
-				puntillo.y = NAN;
-				fila_pts.push_back(puntillo);
-				fila_vis.push_back(0);
-			}
-		}
-		imagePoints.push_back(fila_pts); //*añado la fila correspondiente a la camara idf
-		visibility.push_back(fila_vis);  //añados la visibilidad correspondiente a la cámara idf
-	}
-	/*
-	for(int views=0;views<l;views++)
-	{
-	cameraMatrix.push_back(intrinseca);
-	distortion.push_back(distor);
-	R.push_back(Mat::eye(3, 3, CV_64F));
-	T.push_back(Mat::zeros(3, 1, CV_64F));
-	}
-	*/
-	for (int views = 0; views < l; views++) {
+    /*imagePoints:(input/[output]) vector of vectors of estimated image projections of 3d points (size MxN).
+    Element imagePoints[i][j] refers to j 3d point projection over camera i.*/
+    for(int i=0;i<nImages;i++)
+    {
+        vector<Point2d> points_row;
+	    vector<int> vis_row;
+        for(int j=0;j<ident;j++)
+        {
+            if(valid_points[j]==1)
+            {
+                vector<Point2f> aux_pt;
+                vector<int> aux_im;
+                aux_pt=pt_2d[j];
+                aux_im=img_index[j];
+                int stop_flag=0;
+                //we search point j on image i
+                for(int p=0;p<aux_im.size() && !stop_flag;p++)
+                {
+                    if(aux_im[p]==i)
+                    {  
+                        vis_row.push_back(1);
+                        points_row.push_back(Point2f(aux_pt[p].x,aux_pt[p].y));
+                        stop_flag=1;
+                    }
+                }
+                if(!stop_flag)
+                {
+                    vis_row.push_back(0);
+                    points_row.push_back(Point2f(NAN,NAN));
+                }
+            }
+        }
+        imagePoints.push_back(points_row);
+        visibility.push_back(vis_row);
+    }
+    for (int views = 0; views < l; views++) 
+    {
 		cameraMatrix.push_back(intrinseca);
 		distortion.push_back(distor);
 		Mat rotmatrix = Mat::eye(3, 3, CV_64F);
@@ -271,30 +255,31 @@ int main(int argc, char **argv) {
 		R.push_back(rotvector);
 		T.push_back(Mat::zeros(3, 1, CV_64F));
 	}
-	for (int npts = 0; npts < ident; npts++) {
-		if (usados[npts] == 1) {
+	for (int npts = 0; npts < ident; npts++)
+    {
+		if (valid_points[npts] == 1)
+        {
 			points.push_back(cv::Point3d(0, 0, 0.5));
 		}
 	}
-
-	/*ya esta todo listo para usar cvsba*/
+    /*all ready to use cvsba's run function*/
 	cvsba::Sba sba;
 	cvsba::Sba::Params param;
 	param.type = cvsba::Sba::MOTIONSTRUCTURE;
 	param.fixedIntrinsics = 5;
 	param.fixedDistortion = 5;
 	param.verbose = true;
-	param.iterations = 30;
+	param.iterations = 150;
 	sba.setParams(param);
 	double error = sba.run(points, imagePoints, visibility, cameraMatrix, R, T, distortion);
-	/* representación gráfica de las poses de cámara*/
+	/* Graphical representation of camera's position and 3d points*/
 	pcl::visualization::PCLVisualizer viewer("Viewer");
 	viewer.setBackgroundColor(0.35, 0.35, 0.35);
-
-	vector<Mat> r_fin;
-	vector<Mat> t_fin;
+	vector<Mat> r_end;
+	vector<Mat> t_end;
 	Eigen::Matrix4f initT;
-	for (int i = 0; i < l; i++) {
+	for (int i = 0; i < l; i++)
+    {
 		stringstream sss;
 		string name;
 		sss << i;
@@ -305,46 +290,48 @@ int main(int argc, char **argv) {
 		Eigen::Matrix4f eig_cam_pos;
 		Rodrigues(R[i], r_aux);
 		t_aux = T[i];
-		// r_aux = r_aux.t();
-		// r_fin.push_back(r_aux);
-		// t_aux = -r_aux * T[i];
-		// t_fin.push_back(t_aux);
+		r_aux = r_aux.t();
+		t_aux = -r_aux * T[i];
+        r_end.push_back(r_aux);
+		t_end.push_back(t_aux);
 		eig_cam_pos(0, 0) = r_aux.at<double>(0, 0);
 		eig_cam_pos(0, 1) = r_aux.at<double>(0, 1);
 		eig_cam_pos(0, 2) = r_aux.at<double>(0, 2);
-		eig_cam_pos(0, 3) = t_aux.at<double>(0, 0);
+		eig_cam_pos(0, 3) = t_aux.at<double>(0);
 		eig_cam_pos(1, 0) = r_aux.at<double>(1, 0);
 		eig_cam_pos(1, 1) = r_aux.at<double>(1, 1);
 		eig_cam_pos(1, 2) = r_aux.at<double>(1, 2);
-		eig_cam_pos(1, 3) = t_aux.at<double>(1, 0);
+		eig_cam_pos(1, 3) = t_aux.at<double>(1);
 		eig_cam_pos(2, 0) = r_aux.at<double>(2, 0);
 		eig_cam_pos(2, 1) = r_aux.at<double>(2, 1);
 		eig_cam_pos(2, 2) = r_aux.at<double>(2, 2);
-		eig_cam_pos(2, 3) = t_aux.at<double>(2, 0);
+		eig_cam_pos(2, 3) = t_aux.at<double>(2);
 		eig_cam_pos(3, 0) = 0;
 		eig_cam_pos(3, 1) = 0;
 		eig_cam_pos(3, 2) = 0;
 		eig_cam_pos(3, 3) = 1;
 
 		if(i==0)
-			initT = eig_cam_pos;
-
-		cam_pos = initT.inverse()*eig_cam_pos;
-		viewer.addCoordinateSystem(0.2, cam_pos, name);
-		
+        {
+            initT = eig_cam_pos;
+        }
+        cam_pos = initT.inverse()*eig_cam_pos;
+        viewer.addCoordinateSystem(0.2, cam_pos, name);
 		pcl::PointXYZ textPoint(cam_pos(0,3), cam_pos(1,3), cam_pos(2,3));
 		viewer.addText3D(std::to_string(i), textPoint, 0.02, 1, 1, 1, "text_"+std::to_string(i));
 	}
 
 	pcl::PointCloud<pcl::PointXYZ> cloud;
-	for(auto &pt: points){
+	for(auto &pt: points)
+    {
 		pcl::PointXYZ p(pt.x, pt.y, pt.z);
 		cloud.push_back(p);
 	}
-	viewer.addPointCloud<pcl::PointXYZ>(cloud.makeShared(), "mapa");
+	viewer.addPointCloud<pcl::PointXYZ>(cloud.makeShared(), "map");
 
 	while (!viewer.wasStopped()) {
 		viewer.spin();
 	}
 	return 0;
 }
+
