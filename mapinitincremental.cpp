@@ -4,6 +4,7 @@
 #include <cvsba/cvsba.h>
 #include <string>
 #include <sstream>
+#include<stdlib.h>
 #include <unistd.h>
 #include <ctime>
 #include <pcl/common/common_headers.h>
@@ -104,7 +105,7 @@ int main(int argc,char ** argv)
     //identifier for 3d_point
     int ident=0;
     //we need variables to store the last image and the last features & descriptors
-    auto pt =SURF::create(300);
+    auto pt =SURF::create(500);
     Mat foto1_u;
     vector<KeyPoint> features1;
     Mat descriptors1;
@@ -259,7 +260,10 @@ int main(int argc,char ** argv)
     {
 		if (valid_points[npts] == 1)
         {
-			points.push_back(cv::Point3d(0, 0, 0.5));
+            //double rnd_x=((double)rand() / RAND_MAX);
+            //double rnd_y=((double)rand() / RAND_MAX);
+
+			points.push_back(cv::Point3d(0,0,0.5));
 		}
 	}
     /*all ready to use cvsba's run function*/
@@ -320,11 +324,27 @@ int main(int argc,char ** argv)
 		pcl::PointXYZ textPoint(cam_pos(0,3), cam_pos(1,3), cam_pos(2,3));
 		viewer.addText3D(std::to_string(i), textPoint, 0.02, 1, 1, 1, "text_"+std::to_string(i));
 	}
+    FILE* fcam = fopen("/home/angel/lectura_datos/odometry.txt", "wt");
+    if (fcam == NULL) return -1;
+    for (int i = 0; i < t_end.size(); i++)
+    {
+        fprintf(fcam, "%f %f %f\n", t_end[i].at<double>(0), t_end[i].at<double>(1), t_end[i].at<double>(2));
+    }
+    fclose(fcam);
 
 	pcl::PointCloud<pcl::PointXYZ> cloud;
 	for(auto &pt: points)
     {
-		pcl::PointXYZ p(pt.x, pt.y, pt.z);
+        /*Eigen::Vector4f aux_point;
+        Eigen::Vector4f end_point;
+        aux_point(0,0)=pt.x;
+        aux_point(1,0)=pt.y;
+        aux_point(2,0)=pt.z;
+        aux_point(3,0)=1.0 ;
+        end_point=initT.inverse()*aux_point;
+		pcl::PointXYZ p(end_point(0,0)/end_point(3,0),end_point(1,0)/end_point(3,0),end_point(2,0)/end_point(3,0));
+        */
+        pcl::PointXYZ p(pt.x,pt.y,pt.z);
 		cloud.push_back(p);
 	}
 	viewer.addPointCloud<pcl::PointXYZ>(cloud.makeShared(), "map");
@@ -334,4 +354,3 @@ int main(int argc,char ** argv)
 	}
 	return 0;
 }
-
