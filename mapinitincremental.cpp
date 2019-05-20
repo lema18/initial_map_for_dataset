@@ -35,7 +35,7 @@ cv::Mat loadImage(std::string _folder, int _number, cv::Mat &_intrinsics, cv::Ma
 
 bool matchFeatures(	vector<KeyPoint> &_features1, cv::Mat &_desc1, 
 					vector<KeyPoint> &_features2, cv::Mat &_desc2,
-					vector<int> &_ifKeypoints, vector<int> &_jfKeypoints){
+					vector<int> &_ifKeypoints, vector<int> &_jfKeypoints,double dst_ratio,double confidence,double reproject_err){
 
 	Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("BruteForce");
 	vector<vector<DMatch>> matches;
@@ -45,7 +45,7 @@ bool matchFeatures(	vector<KeyPoint> &_features1, cv::Mat &_desc1,
 	matcher->knnMatch(_desc1, _desc2, matches, 2);
 	for (int k = 0; k < matches.size(); k++)
 	{
-		if (matches[k][0].distance < 0.8 * matches[k][1].distance)
+		if (matches[k][0].distance < dst_ratio * matches[k][1].distance)
 		{
 			source.push_back(_features1[matches[k][0].queryIdx].pt);
 			destination.push_back(_features2[matches[k][0].trainIdx].pt);
@@ -55,7 +55,7 @@ bool matchFeatures(	vector<KeyPoint> &_features1, cv::Mat &_desc1,
 	}
 
 	//aplicamos filtro ransac
-	findFundamentalMat(source, destination, FM_RANSAC, 1.0, 0.99, mask);
+	findFundamentalMat(source, destination, FM_RANSAC,reproject_err, confidence, mask);
 	for (int m = 0; m < mask.size(); m++)
 	{
 		if (mask[m])
@@ -94,6 +94,21 @@ int main(int argc,char ** argv)
 	distcoef.convertTo(distcoef, CV_64F);
     //number of images to compose the initial map
     int nImages =  atoi(argv[2]);
+    //threshold for points tha are seen in more than i images
+    int img_threshold;
+    sscanf(argv[3],"%d",&img_threshold);
+    //distance ratio to reject features
+    double dst_ratio;
+    sscanf(argv[4],"%lf",&dst_ratio);
+    //confidence on ransac
+    double confidence;
+    sscanf(argv[5],"%lf",&confidence);
+    //threshold for error_reprojection on ransac
+    double reproject_err;
+    sscanf(argv[6],"%lf",&reproject_err);
+    //cvsba iterations
+    int niter;
+    sscanf(argv[7],"%d",&niter);
     //map for 3d points projections
     unordered_map<int,vector<Point2f>> pt_2d;
     //map for image index of 3d points projections;
@@ -123,7 +138,7 @@ int main(int argc,char ** argv)
 	    pt->detectAndCompute(foto2_u, Mat(), features2, descriptors2);
         //match features
         vector<int> if_keypoint, jf_keypoint;
-        matchFeatures(features1, descriptors1, features2, descriptors2, if_keypoint, jf_keypoint);
+        matchFeatures(features1, descriptors1, features2, descriptors2, if_keypoint, jf_keypoint,dst_ratio,confidence,reproject_err);
         displayMatches(foto1_u, features1, if_keypoint,foto2_u, features2, jf_keypoint);
         Mat used_features=Mat::zeros(1,int(if_keypoint.size()),CV_64F);//to differentiate the features that correspond to new points from those that do not
         if(ident>0)
@@ -191,7 +206,7 @@ int main(int argc,char ** argv)
         if(search_point!=pt_2d.end())
         {
             int dimension= search_point->second.size();
-            if(dimension>=3)
+            if(dimension>=img_threshold)
             {
                 valid_points[i]=1;
                 cnt++;
@@ -246,15 +261,44 @@ int main(int argc,char ** argv)
         imagePoints.push_back(points_row);
         visibility.push_back(vis_row);
     }
+    
+    //we know the first position of the camera
+    //orientation
+    Eigen::Quaterniond q;
+    q.x()=0.8212;
+    q.y()=-0.3941;
+    q.z()=0.1606;
+    q.w()=-0.3802;
+    Eigen::Matrix3d f_rot=q.normalized().toRotationMatrix();
+    //xyz position in world coordinates
+    Mat first_pos=Mat::zeros(3,1,CV_64F);
+    first_pos.at<double>(0)=-0.8686;
+    first_pos.at<double>(1)=0.6001;
+    first_pos.at<double>(2)=1.5624;
+    //camera extrinsics for cvsba
+    Mat first_rot=Mat::zeros(3,3,CV_64F);
+    first_rot.at<double>(0,0)=f_rot(0,0);
+    first_rot.at<double>(0,1)=f_rot(0,1);
+    first_rot.at<double>(0,2)=f_rot(0,2);
+    first_rot.at<double>(1,0)=f_rot(1,0);
+    first_rot.at<double>(1,1)=f_rot(1,1);
+    first_rot.at<double>(1,2)=f_rot(1,2);
+    first_rot.at<double>(2,0)=f_rot(2,0);
+    first_rot.at<double>(2,1)=f_rot(2,1);
+    first_rot.at<double>(2,2)=f_rot(2,2);
+    Mat first_tras;
+    first_tras=-(first_rot.t())*first_pos;
+    first_rot=first_rot.t();
     for (int views = 0; views < l; views++) 
     {
 		cameraMatrix.push_back(intrinseca);
 		distortion.push_back(distor);
-		Mat rotmatrix = Mat::eye(3, 3, CV_64F);
+		//Mat rotmatrix = Mat::eye(3, 3, CV_64F);
 		Mat rotvector;
-		Rodrigues(rotmatrix, rotvector);
+		//Rodrigues(rotmatrix, rotvector);
+        Rodrigues(first_rot,rotvector);
 		R.push_back(rotvector);
-		T.push_back(Mat::zeros(3, 1, CV_64F));
+		T.push_back(first_tras);
 	}
 	for (int npts = 0; npts < ident; npts++)
     {
@@ -273,7 +317,7 @@ int main(int argc,char ** argv)
 	param.fixedIntrinsics = 5;
 	param.fixedDistortion = 5;
 	param.verbose = true;
-	param.iterations = 150;
+	param.iterations = niter;
 	sba.setParams(param);
 	double error = sba.run(points, imagePoints, visibility, cameraMatrix, R, T, distortion);
 	/* Graphical representation of camera's position and 3d points*/
@@ -293,10 +337,9 @@ int main(int argc,char ** argv)
 		Eigen::Affine3f cam_pos;
 		Eigen::Matrix4f eig_cam_pos;
 		Rodrigues(R[i], r_aux);
-		t_aux = T[i];
-		r_aux = r_aux.t();
-		t_aux = -r_aux * T[i];
-        r_end.push_back(r_aux);
+		//t_aux = T[i];
+		t_aux = -r_aux.t() * T[i];
+        r_end.push_back(r_aux.t());
 		t_end.push_back(t_aux);
 		eig_cam_pos(0, 0) = r_aux.at<double>(0, 0);
 		eig_cam_pos(0, 1) = r_aux.at<double>(0, 1);
@@ -320,9 +363,10 @@ int main(int argc,char ** argv)
             initT = eig_cam_pos;
         }
         cam_pos = initT.inverse()*eig_cam_pos;
-        viewer.addCoordinateSystem(0.2, cam_pos, name);
+        //cam_pos=eig_cam_pos;
+        viewer.addCoordinateSystem(0.05, cam_pos, name);
 		pcl::PointXYZ textPoint(cam_pos(0,3), cam_pos(1,3), cam_pos(2,3));
-		viewer.addText3D(std::to_string(i), textPoint, 0.02, 1, 1, 1, "text_"+std::to_string(i));
+		viewer.addText3D(std::to_string(i), textPoint, 0.01, 1, 1, 1, "text_"+std::to_string(i));
 	}
     FILE* fcam = fopen("/home/angel/lectura_datos/odometry.txt", "wt");
     if (fcam == NULL) return -1;
