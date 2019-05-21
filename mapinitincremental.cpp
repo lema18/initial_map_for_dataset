@@ -16,6 +16,8 @@
 #include <Eigen/LU>
 #include <Eigen/Geometry>
 #include <opencv2/xfeatures2d.hpp>
+#include <sys/stat.h>
+#include <fstream>
 
 using namespace cv;
 using namespace std;
@@ -265,16 +267,16 @@ int main(int argc,char ** argv)
     //we know the first position of the camera
     //orientation
     Eigen::Quaterniond q;
-    q.x()=0.8212;
-    q.y()=-0.3941;
-    q.z()=0.1606;
-    q.w()=-0.3802;
+    q.x()=0.0;
+    q.y()=-0.0;
+    q.z()=0.0;
+    q.w()=-0.1;
     Eigen::Matrix3d f_rot=q.normalized().toRotationMatrix();
     //xyz position in world coordinates
     Mat first_pos=Mat::zeros(3,1,CV_64F);
-    first_pos.at<double>(0)=-0.8686;
-    first_pos.at<double>(1)=0.6001;
-    first_pos.at<double>(2)=1.5624;
+    first_pos.at<double>(0)=0.0;
+    first_pos.at<double>(1)=0.0;
+    first_pos.at<double>(2)=0.0;
     //camera extrinsics for cvsba
     Mat first_rot=Mat::zeros(3,3,CV_64F);
     first_rot.at<double>(0,0)=f_rot(0,0);
@@ -326,6 +328,11 @@ int main(int argc,char ** argv)
 	vector<Mat> r_end;
 	vector<Mat> t_end;
 	Eigen::Matrix4f initT;
+
+    mkdir("./lectura_datos", 0777);
+    std::ofstream file("./lectura_datos/odometry.txt");
+    if (!file.is_open()) return -1;
+
 	for (int i = 0; i < l; i++)
     {
 		stringstream sss;
@@ -337,10 +344,10 @@ int main(int argc,char ** argv)
 		Eigen::Affine3f cam_pos;
 		Eigen::Matrix4f eig_cam_pos;
 		Rodrigues(R[i], r_aux);
-		//t_aux = T[i];
-		t_aux = -r_aux.t() * T[i];
-        r_end.push_back(r_aux.t());
-		t_end.push_back(t_aux);
+		t_aux = T[i];
+		// t_aux = -r_aux.t() * T[i];
+        // r_end.push_back(r_aux.t());
+		// t_end.push_back(t_aux);
 		eig_cam_pos(0, 0) = r_aux.at<double>(0, 0);
 		eig_cam_pos(0, 1) = r_aux.at<double>(0, 1);
 		eig_cam_pos(0, 2) = r_aux.at<double>(0, 2);
@@ -358,23 +365,25 @@ int main(int argc,char ** argv)
 		eig_cam_pos(3, 2) = 0;
 		eig_cam_pos(3, 3) = 1;
 
-		if(i==0)
-        {
+        // eig_cam_pos = eig_cam_pos.inverse().eval();
+
+		if(i==0) {
             initT = eig_cam_pos;
         }
         cam_pos = initT.inverse()*eig_cam_pos;
-        //cam_pos=eig_cam_pos;
+
         viewer.addCoordinateSystem(0.05, cam_pos, name);
 		pcl::PointXYZ textPoint(cam_pos(0,3), cam_pos(1,3), cam_pos(2,3));
 		viewer.addText3D(std::to_string(i), textPoint, 0.01, 1, 1, 1, "text_"+std::to_string(i));
-	}
-    FILE* fcam = fopen("/home/angel/lectura_datos/odometry.txt", "wt");
-    if (fcam == NULL) return -1;
-    for (int i = 0; i < t_end.size(); i++)
-    {
-        fprintf(fcam, "%f %f %f\n", t_end[i].at<double>(0), t_end[i].at<double>(1), t_end[i].at<double>(2));
+
+        Eigen::Quaternionf q(cam_pos.matrix().block<3,3>(0,0));
+
+        file << 0.0 << " " << cam_pos(0,3) << " " <<  cam_pos(1,3) << " " << cam_pos(2,3) << " " << 
+                q.x() << " " << q.y() << " " << q.z() << " " << q.w() << std::endl;
+    
     }
-    fclose(fcam);
+    
+    file.close();
 
 	pcl::PointCloud<pcl::PointXYZ> cloud;
 	for(auto &pt: points)
@@ -388,7 +397,10 @@ int main(int argc,char ** argv)
         end_point=initT.inverse()*aux_point;
 		pcl::PointXYZ p(end_point(0,0)/end_point(3,0),end_point(1,0)/end_point(3,0),end_point(2,0)/end_point(3,0));
         */
-        pcl::PointXYZ p(pt.x,pt.y,pt.z);
+
+        Eigen::Vector4f p_aux = {pt.x,pt.y,pt.z,1};
+        p_aux = initT.inverse()*p_aux;
+        pcl::PointXYZ p(p_aux[0], p_aux[1], p_aux[2]);
 		cloud.push_back(p);
 	}
 	viewer.addPointCloud<pcl::PointXYZ>(cloud.makeShared(), "map");
